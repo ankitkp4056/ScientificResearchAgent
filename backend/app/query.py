@@ -49,6 +49,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from typing import Any
 
 from llama_index.core import VectorStoreIndex
@@ -62,6 +63,7 @@ from app.config import (
     LLM_MODEL,
     LOW_CONFIDENCE_THRESHOLD,
     SIMILARITY_TOP_K,
+    get_config_snapshot,
 )
 from app.index import load_or_build_index
 from app.logging_utils import _build_chunk_log_entry, log_query
@@ -264,6 +266,8 @@ def query_question(
         return {"answer": "Please provide a non-empty question.", "sources": []}
 
     t_start = time.perf_counter()
+    query_id = str(uuid.uuid4())
+    config_snapshot = get_config_snapshot()
     answer: str = _INSUFFICIENT_INFO_MSG
     nodes: list[NodeWithScore] = []
     sources: list[dict[str, Any]] = []
@@ -312,22 +316,26 @@ def query_question(
         processing_time_ms = int((time.perf_counter() - t_start) * 1000)
 
         # Build chunk log entries from whatever nodes we managed to retrieve.
+        # Include rank (1-based index, 1 = highest score).
         chunk_logs = [
             _build_chunk_log_entry(
                 text=n.node.get_content() or "",
                 metadata=n.node.metadata or {},
                 score=n.score or 0.0,
+                rank=idx + 1,
             )
-            for n in nodes
+            for idx, n in enumerate(nodes)
         ]
 
         # Step 5b: Log the query regardless of success or failure.
         log_query(
+            query_id=query_id,
             question=question,
             answer=answer,
             model=LLM_MODEL,
             top_score=top_scr,
             processing_time_ms=processing_time_ms,
+            config=config_snapshot,
             retrieved_chunks=chunk_logs,
             logs_dir=LOGS_DIR,
         )

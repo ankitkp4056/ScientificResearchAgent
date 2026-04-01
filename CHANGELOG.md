@@ -5,6 +5,31 @@ All notable changes to this project will be documented here.
 ## [Unreleased]
 
 ### Added
+- Phase 5: Evaluation & Tuning (`backend/app/api.py`, `eval/evaluate.py`)
+  - Extended structured logging with UUID, config snapshot, and retrieval rank per chunk
+  - `backend/app/config.py` — added `get_config_snapshot()` helper that exports all tuning parameters as a dict for eval tracking
+  - `backend/app/logging_utils.py` — extended `log_query()` to write `id` (UUID), `config` (snapshot), and added `rank` field to chunk log entries (1-based index, 1 = highest score)
+  - `backend/app/query.py` — generates UUID via `uuid.uuid4()`, captures config snapshot via `get_config_snapshot()`, passes both to `log_query()`, annotates chunks with retrieval rank
+  - `backend/app/api.py` — added 4 eval endpoints:
+    - `GET /eval/review` — serves inline HTML human review UI for marking chunk relevance and citation correctness on real queries
+    - `GET /eval/next-query` — fetches next unreviewed query from logs (checks `eval/reviews.jsonl` for already-reviewed IDs)
+    - `GET /eval/query/{query_id}` — fetches specific query log by UUID (for re-review)
+    - `POST /eval/submit-review` — validates review payload, appends to `eval/reviews.jsonl`, auto-rebuilds `eval/known_relevance.json`
+    - Inline `_rebuild_known_relevance()` helper aggregates `reviews.jsonl` into `known_relevance.json` per exact question string; handles re-reviews by using latest entry per query_id
+  - Human review UI (inline HTML in `GET /eval/review`) — question/answer display, per-chunk Relevant/Not Relevant buttons, per-citation Correct/Incorrect buttons, notes field, Submit/Skip workflow; auto-loads next query after submission; styled consistent with main frontend
+  - `eval/evaluate.py` — automated CLI eval runner with 5-metric layers:
+    - Layer 1: Precision@K (script-based, uses `known_relevance.json`)
+    - Layer 2: LLM judge for unknown chunks (OpenAI API, temperature=0, cached per question+chunk pair)
+    - Layer 3: Citation presence (script-based regex check for `[paper, page X]` format)
+    - Layer 4: Citation correctness (LLM judge with YES/PARTIALLY/NO verdict, cached)
+    - Layer 5: Hallucination detection (LLM judge extracts SUPPORTED/UNSUPPORTED claims, computes support_score)
+    - Outputs `eval/results/run_<timestamp>.json` with full config snapshot, overall metrics (precision_at_k, precision_at_k_known_only, citation_presence, citation_correctness, hallucination_score, queries_evaluated, chunks_judged_by_llm, chunks_judged_by_script), and per-query breakdowns
+    - `--diff <previous_run.json>` mode compares config changes and metric deltas, prints formatted summary with visual arrows for improvements/regressions
+  - LLM judge caching in `eval/cache/llm_judge_cache.json` — hashes prompts (sha256), avoids redundant API calls, makes eval runs reproducible and cheaper
+  - `eval/gold_seed.json` — seed questions template (5 generic research questions)
+  - `eval/known_relevance.json` — built from human reviews, consumed by eval runner (starts empty)
+  - `eval/reviews.jsonl` — raw human review data (one JSON object per line, starts empty)
+
 - Phase 4: Web UI (`backend/app/api.py`, `frontend/index.html`)
   - FastAPI app with lifespan-based startup — query engine loaded once at boot; startup failure logs the error and leaves server reachable (so `/reindex` still works)
   - `GET /` — serves `frontend/index.html` via `FileResponse`; 404 if file missing

@@ -71,3 +71,38 @@ Key architectural and product decisions made during development, with reasoning.
 **Decision:** Prepend `[PAGE n]` sentinel lines to each page's text before concatenation, then strip sentinels from the final chunk text while using them to recover the originating page number.
 **Reasoning:** Keeps chunking logic in a single pass through the full document (better sentence splitting across page boundaries) while still preserving page attribution per chunk. Fallback to `start_char_idx` covers edge cases where no sentinel appears in a chunk.
 **Alternatives considered:** Chunk each page independently (breaks sentences at page boundaries, degrades retrieval quality); post-hoc page lookup via character offset only (fragile without sentinels as anchors).
+
+## 2026-04-01 — Two-flow evaluation architecture (human-in-the-loop + automated metrics)
+
+**Context:** Need to evaluate RAG quality (retrieval relevance, citation correctness, hallucination) but don't have ground-truth data initially. Also need to track metric changes after tuning (chunk size, top-k, model swaps).
+**Decision:** Build two complementary flows: (1) human review UI for organically building eval data (chunk relevance, citation correctness) via reviewing real queries; (2) automated eval runner that computes script-based metrics (Precision@K, citation presence) for known data and falls back to LLM judge (GPT-4o-mini) for unknown data, with diff mode to compare runs.
+**Reasoning:** Human reviews are slow but high-quality — use them to bootstrap a ground-truth dataset. Script-based metrics are cheap and deterministic once you have ground truth. LLM judge fills the gap for new queries (eval can run even with zero reviews) but is cached to avoid redundant API calls. Diff mode correlates config changes with metric changes, making tuning iterations faster. This hybrid approach balances cost, coverage, and quality.
+**Alternatives considered:** Full manual eval (doesn't scale, blocks iteration); pure LLM judge (expensive, non-deterministic, no human oversight); script-only with fixed test set (requires upfront test creation, misses organic edge cases).
+
+## 2026-04-01 — UUID and full config snapshot in every query log
+
+**Context:** Eval flow needs stable query IDs (to track which queries have been reviewed) and config provenance (to understand which parameter set produced a given answer, enabling diff mode).
+**Decision:** Generate UUID for each query in `query_question()`, call `get_config_snapshot()` to capture all tuning parameters, include both in the log entry written by `log_query()`.
+**Reasoning:** UUID decouples ID from filename (allows renames, makes referencing stable). Full config snapshot per log makes each log self-contained (no need to reconstruct historical config states). Logging UUID and config has zero cost at query time (just dict creation, no API calls) and unlocks two critical eval features: review tracking and config-aware diffing.
+**Alternatives considered:** Use filename as ID (fragile if logs are moved/renamed); store config separately (requires external file and timestamp correlation, complicates diff logic); omit config (makes diff mode impossible).
+
+## 2026-04-01 — Exact question string as key in known_relevance.json
+
+**Context:** Aggregating human reviews into a ground-truth dataset. Need to match future queries against reviewed queries to decide script vs LLM judge.
+**Decision:** Use the raw question string (no normalization, no fuzzy matching) as the key in `known_relevance.json`.
+**Reasoning:** Simple, deterministic, and bug-free. Normalization (lowercasing, stemming, semantic similarity) adds complexity and false-positive risk (slightly different questions might retrieve different chunks, so treating them as the same is misleading). For a local research tool, having multiple entries for paraphrased questions is acceptable — reviewers can re-review if they want, and the eval runner just treats it as a new question.
+**Alternatives considered:** Normalize questions (lower/strip/stem) for fuzzy matching (adds complexity, false positives); use embedding similarity to find "close enough" questions (too slow, non-deterministic, overkill for local tool).
+
+## 2026-04-01 — LLM judge caching with prompt hashing
+
+**Context:** Eval runner calls LLM judge for unknown chunks, citation correctness, and hallucination detection. Same prompts appear across eval runs (especially if re-evaluating after config changes that don't affect logs).
+**Decision:** Hash each LLM judge prompt (sha256), cache the response in `eval/cache/llm_judge_cache.json`, skip API call if cache hit.
+**Reasoning:** Dramatic cost and speed improvement for repeated eval runs. With temperature=0, responses are deterministic, so caching is safe. Prompt hashing (vs storing full prompt as key) keeps cache file compact and collision-free. Cache is per-project (not per-run), so tuning iterations reuse results for unchanged queries.
+**Alternatives considered:** No caching (wasteful, slow); cache per eval run (doesn't help tuning iterations); cache by (question, chunk) pair only (misses citation/hallucination prompts, which differ in structure).
+
+## 2026-04-01 — Inline _rebuild_known_relevance in API endpoint (no separate script)
+
+**Context:** Need to aggregate `reviews.jsonl` into `known_relevance.json` after each review submission so the eval runner sees fresh data.
+**Decision:** Implement `_rebuild_known_relevance()` as an inline helper in `backend/app/api.py` and call it synchronously at the end of `POST /eval/submit-review`.
+**Reasoning:** Simplest integration — no separate process, no polling, no stale data. Aggregation is fast (JSONL parse + dict build, typically <100ms even for hundreds of reviews), so blocking the POST response is acceptable. Keeps the build logic co-located with the review submission logic, easier to maintain. If aggregation fails, the review is still saved to `reviews.jsonl`, so no data loss.
+**Alternatives considered:** Separate `eval/build_known_relevance.py` CLI script run manually (user friction, stale data risk); background task/queue (overkill for local tool); rebuild on eval runner startup (too late — eval starts before new reviews are aggregated).
