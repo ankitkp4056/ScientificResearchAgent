@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scientific Research Agent</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Reset & base                                                         */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Layout                                                               */
+    /* ------------------------------------------------------------------ */
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Header                                                               */
+    /* ------------------------------------------------------------------ */
+    header {
+      text-align: center;
+      border-bottom: 2px solid #2c3e50;
+      padding-bottom: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #2c3e50;
+      letter-spacing: 0.02em;
+    }
+
+    header p {
+      margin-top: 0.4rem;
+      font-size: 0.95rem;
+      color: #555;
+      font-style: italic;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Query panel                                                          */
+    /* ------------------------------------------------------------------ */
+    .query-panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .query-panel label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: #2c3e50;
+      margin-bottom: 0.5rem;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 0.6rem;
+    }
+
+    #question-input {
+      flex: 1;
+      padding: 0.6rem 0.8rem;
+      font-size: 1rem;
+      font-family: Georgia, serif;
+      border: 1px solid #bbb;
+      border-radius: 3px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #question-input:focus {
+      border-color: #2c3e50;
+    }
+
+    button {
+      cursor: pointer;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 3px;
+      padding: 0.6rem 1.1rem;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    #ask-btn {
+      background: #2c3e50;
+      color: #fff;
+      font-weight: bold;
+    }
+
+    #ask-btn:hover:not(:disabled) { background: #1a252f; }
+    #ask-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ------------------------------------------------------------------ */
+    /* Status / spinner                                                     */
+    /* ------------------------------------------------------------------ */
+    .status-bar {
+      display: none;          /* shown via JS when loading */
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.9rem;
+      color: #555;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .status-bar.visible { display: flex; }
+
+    /* Pure-CSS spinner — no external assets */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #ccc;
+      border-top-color: #2c3e50;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Error banner                                                         */
+    /* ------------------------------------------------------------------ */
+    .error-banner {
+      display: none;          /* shown via JS on error */
+      background: #fff0f0;
+      border: 1px solid #e0a0a0;
+      border-left: 4px solid #c0392b;
+      border-radius: 3px;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      color: #7b241c;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .error-banner.visible { display: block; }
+
+    /* ------------------------------------------------------------------ */
+    /* Answer panel                                                         */
+    /* ------------------------------------------------------------------ */
+    .answer-panel {
+      display: none;          /* shown via JS after a successful query */
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .answer-panel.visible { display: block; }
+
+    .answer-panel h2 {
+      font-size: 1rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #2c3e50;
+      margin-bottom: 0.75rem;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    #answer-text {
+      font-size: 1rem;
+      line-height: 1.7;
+      white-space: pre-wrap;   /* preserve newlines from the LLM */
+      word-break: break-word;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Citations                                                            */
+    /* ------------------------------------------------------------------ */
+    .citations-section {
+      display: none;
+      margin-top: 1.25rem;
+      border-top: 1px solid #eee;
+      padding-top: 1rem;
+    }
+
+    .citations-section.visible { display: block; }
+
+    .citations-section h3 {
+      font-size: 0.85rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #555;
+      margin-bottom: 0.6rem;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .citation-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .citation-item {
+      background: #f9f9f6;
+      border: 1px solid #e0e0d8;
+      border-left: 3px solid #8e9fb0;
+      border-radius: 3px;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.88rem;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .citation-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+
+    .citation-paper {
+      font-weight: bold;
+      color: #2c3e50;
+    }
+
+    .citation-meta {
+      color: #777;
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+
+    .citation-preview {
+      margin-top: 0.35rem;
+      color: #555;
+      font-size: 0.83rem;
+      line-height: 1.5;
+      font-style: italic;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Re-index panel                                                       */
+    /* ------------------------------------------------------------------ */
+    .reindex-panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .reindex-info {
+      font-size: 0.88rem;
+      color: #555;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .reindex-info strong {
+      color: #1a1a1a;
+      font-weight: bold;
+    }
+
+    #reindex-btn {
+      background: #eee;
+      color: #333;
+      border: 1px solid #ccc;
+      font-size: 0.85rem;
+      padding: 0.5rem 1rem;
+    }
+
+    #reindex-btn:hover:not(:disabled) { background: #e0e0e0; }
+    #reindex-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .reindex-status {
+      width: 100%;
+      font-size: 0.85rem;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .reindex-status.success { color: #1d6a2e; }
+    .reindex-status.error   { color: #c0392b; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>Scientific Research Agent</h1>
+    <p>Ask questions — get cited answers from your research papers.</p>
+  </header>
+
+  <!-- Query panel -->
+  <div class="query-panel">
+    <label for="question-input">Your question</label>
+    <div class="input-row">
+      <input
+        id="question-input"
+        type="text"
+        placeholder="e.g. What methodology was used in the study?"
+        autocomplete="off"
+        spellcheck="true"
+      />
+      <button id="ask-btn" disabled>Ask</button>
+    </div>
+  </div>
+
+  <!-- Loading indicator -->
+  <div class="status-bar" id="status-bar">
+    <div class="spinner"></div>
+    <span id="status-text">Querying papers…</span>
+  </div>
+
+  <!-- Error banner -->
+  <div class="error-banner" id="error-banner" role="alert"></div>
+
+  <!-- Answer panel (hidden until a response arrives) -->
+  <div class="answer-panel" id="answer-panel">
+    <h2>Answer</h2>
+    <p id="answer-text"></p>
+
+    <!-- Citations -->
+    <div class="citations-section" id="citations-section">
+      <h3>Sources</h3>
+      <ul class="citation-list" id="citation-list"></ul>
+    </div>
+  </div>
+
+  <!-- Re-index panel -->
+  <div class="reindex-panel">
+    <div class="reindex-info">
+      <strong>Re-index papers</strong> — run this after adding or updating PDFs.
+    </div>
+    <button id="reindex-btn">Re-index Papers</button>
+    <div class="reindex-status" id="reindex-status" aria-live="polite"></div>
+  </div>
+
+</div><!-- /.container -->
+
+<script>
+  /* -------------------------------------------------------------------- */
+  /* Utilities                                                              */
+  /* -------------------------------------------------------------------- */
+
+  /** Show/hide an element by toggling the "visible" class. */
+  function setVisible(el, visible) {
+    el.classList.toggle("visible", visible);
+  }
+
+  /** Escape HTML special characters to prevent XSS when inserting text. */
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  /* -------------------------------------------------------------------- */
+  /* Element references                                                     */
+  /* -------------------------------------------------------------------- */
+
+  const questionInput  = document.getElementById("question-input");
+  const askBtn         = document.getElementById("ask-btn");
+  const statusBar      = document.getElementById("status-bar");
+  const statusText     = document.getElementById("status-text");
+  const errorBanner    = document.getElementById("error-banner");
+  const answerPanel    = document.getElementById("answer-panel");
+  const answerText     = document.getElementById("answer-text");
+  const citationsSection = document.getElementById("citations-section");
+  const citationList   = document.getElementById("citation-list");
+  const reindexBtn     = document.getElementById("reindex-btn");
+  const reindexStatus  = document.getElementById("reindex-status");
+
+  /* -------------------------------------------------------------------- */
+  /* Client-side validation: enable Ask button only when input is non-empty */
+  /* -------------------------------------------------------------------- */
+
+  questionInput.addEventListener("input", () => {
+    askBtn.disabled = questionInput.value.trim() === "";
+  });
+
+  /* Allow Enter key to submit */
+  questionInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !askBtn.disabled) {
+      askBtn.click();
+    }
+  });
+
+  /* -------------------------------------------------------------------- */
+  /* Shared UI helpers                                                      */
+  /* -------------------------------------------------------------------- */
+
+  /** Show the loading spinner with an optional label. */
+  function showLoading(msg) {
+    statusText.textContent = msg || "Loading…";
+    setVisible(statusBar, true);
+    setVisible(errorBanner, false);
+  }
+
+  /** Hide the loading spinner. */
+  function hideLoading() {
+    setVisible(statusBar, false);
+  }
+
+  /** Display an error message in the error banner. */
+  function showError(msg) {
+    errorBanner.textContent = msg;
+    setVisible(errorBanner, true);
+  }
+
+  /* -------------------------------------------------------------------- */
+  /* Query handler                                                          */
+  /* -------------------------------------------------------------------- */
+
+  askBtn.addEventListener("click", async () => {
+    const question = questionInput.value.trim();
+    if (!question) return;
+
+    /* Lock UI while request is in flight */
+    askBtn.disabled  = true;
+    reindexBtn.disabled = true;
+    setVisible(answerPanel, false);
+    showLoading("Querying papers…");
+
+    try {
+      const res = await fetch("/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        /* Server returned 4xx / 5xx with structured error */
+        showError(data.error || data.detail || `Server error (${res.status}).`);
+        return;
+      }
+
+      /* Render answer */
+      answerText.textContent = data.answer;
+
+      /* Render citations */
+      citationList.innerHTML = "";
+      if (data.sources && data.sources.length > 0) {
+        data.sources.forEach((src, i) => {
+          const li = document.createElement("li");
+          li.className = "citation-item";
+          li.innerHTML = `
+            <div class="citation-header">
+              <span class="citation-paper">${escapeHtml(src.paper)}</span>
+              <span class="citation-meta">Page ${escapeHtml(String(src.page))} &middot; score ${src.score.toFixed(3)}</span>
+            </div>
+            <div class="citation-preview">${escapeHtml(src.text_preview)}</div>
+          `;
+          citationList.appendChild(li);
+        });
+        setVisible(citationsSection, true);
+      } else {
+        setVisible(citationsSection, false);
+      }
+
+      setVisible(answerPanel, true);
+
+    } catch (err) {
+      /* Network or JSON parse error */
+      showError("Could not reach the server. Is it running on http://127.0.0.1:8000?");
+      console.error("Query error:", err);
+    } finally {
+      hideLoading();
+      askBtn.disabled = questionInput.value.trim() === "";
+      reindexBtn.disabled = false;
+    }
+  });
+
+  /* -------------------------------------------------------------------- */
+  /* Re-index handler                                                       */
+  /* -------------------------------------------------------------------- */
+
+  reindexBtn.addEventListener("click", async () => {
+    const confirmed = confirm(
+      "Re-indexing will wipe the current index and re-process all PDFs in the papers directory.\n\n" +
+      "This may take several minutes. Continue?"
+    );
+    if (!confirmed) return;
+
+    /* Lock UI while re-index runs */
+    reindexBtn.disabled  = true;
+    askBtn.disabled      = true;
+    reindexStatus.textContent = "";
+    reindexStatus.className   = "reindex-status";
+    showLoading("Re-indexing papers — this may take a few minutes…");
+    setVisible(errorBanner, false);
+
+    try {
+      const res = await fetch("/reindex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        const msg = data.error || data.detail || `Re-index failed (${res.status}).`;
+        reindexStatus.textContent = "Error: " + msg;
+        reindexStatus.className   = "reindex-status error";
+        showError("Re-index failed: " + msg);
+        return;
+      }
+
+      reindexStatus.textContent = data.message || "Re-index complete.";
+      reindexStatus.className   = "reindex-status success";
+
+    } catch (err) {
+      reindexStatus.textContent = "Network error — server may be unreachable.";
+      reindexStatus.className   = "reindex-status error";
+      console.error("Re-index error:", err);
+    } finally {
+      hideLoading();
+      reindexBtn.disabled = false;
+      askBtn.disabled     = questionInput.value.trim() === "";
+    }
+  });
+</script>
+
+</body>
+</html>
