@@ -5,6 +5,19 @@ All notable changes to this project will be documented here.
 ## [Unreleased]
 
 ### Added
+- Phase 3: Query pipeline (`backend/app/query.py`)
+  - `initialize_query_engine(papers_dir, storage_dir)` — loads (or builds) the vector index, wires a `RetrieverQueryEngine` with GPT-4o-mini (`temperature=0.0`) and a grounding system prompt that restricts answers to provided context; fails fast with `ValueError` if `OPENAI_API_KEY` is unset
+  - `query_question(question, query_engine)` — single-retrieval flow: fetches top-5 chunks, guards against empty retrieval (returns "insufficient information" without calling the LLM), prepends a low-confidence disclaimer when top score < 0.3, synthesizes a cited answer, returns `{"answer": str, "sources": [{"paper", "page", "score", "text_preview"}]}`
+  - Inline citation format injected via system prompt: `[paper_name, page X]`
+  - LLM API errors caught and returned as user-friendly message; query is still logged
+  - CLI entry point: `python -m app.query [question]` — prints answer and numbered source list; interactive prompt if question omitted
+- `backend/app/logging_utils.py` — JSON query logging
+  - `log_query(...)` — writes one JSON file per query to `LOGS_DIR`; filename `query_<YYYYMMDD_HHMMSS_ffffff>.json`; auto-creates directory; OSError on write never crashes the pipeline
+  - `_build_chunk_log_entry(text, metadata, score)` — builds serialisable chunk dict (200-char preview) for inclusion in log payload
+  - Log schema: `timestamp`, `question`, `answer`, `model`, `top_score`, `processing_time_ms`, `retrieved_chunks[]`
+- `backend/app/config.py` — added `LLM_MODEL = "gpt-4o-mini"`, `SIMILARITY_TOP_K = 5`, `LOW_CONFIDENCE_THRESHOLD = 0.3`
+- `backend/requirements.txt` — added `llama-index-llms-openai>=0.1.0`
+
 - Phase 2: Embedding & persistent index pipeline (`backend/app/index.py`)
   - `_get_embed_model()` — validates `OPENAI_API_KEY` at startup, returns `OpenAIEmbedding` (text-embedding-3-small, 1536 dims); fails fast with a clear error rather than an obscure API failure
   - `build_index(chunks, embed_model)` — creates `VectorStoreIndex` from Phase 1 Document chunks; preserves `paper_name` and `page_number` metadata through embedding for citation support in Phase 3

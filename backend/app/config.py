@@ -28,3 +28,9 @@ CHUNK_OVERLAP: int = 100
 # Embedding constants
 EMBEDDING_MODEL: str = "text-embedding-3-small"
 EMBEDDING_DIMENSIONS: int = 1536
+
+# Query / LLM constants
+LLM_MODEL: str = "gpt-4o-mini"
+SIMILARITY_TOP_K: int = 5
+# Retrieval score below this threshold triggers a low-confidence disclaimer.
+LOW_CONFIDENCE_THRESHOLD: float = 0.3
