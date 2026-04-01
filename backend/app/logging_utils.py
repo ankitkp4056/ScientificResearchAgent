@@ -7,17 +7,20 @@ easy chronological sorting.
 Log schema per file
 -------------------
 {
+  "id":                 str   — UUID for this query (enables stable referencing),
   "timestamp":          str   — ISO-8601 UTC time the log was written,
   "question":           str   — the original user question,
   "answer":             str   — the generated answer (or error message),
   "model":              str   — LLM model used (e.g. "gpt-4o-mini"),
   "top_score":          float | null — highest retrieval similarity score,
   "processing_time_ms": int   — wall-clock ms from question receipt to answer,
+  "config":             dict  — snapshot of all tuning parameters for this query,
   "retrieved_chunks": [
     {
       "text_preview": str  — first 200 chars of the chunk text,
       "metadata":     dict — raw chunk metadata (paper_name, page_number, …),
-      "score":        float — similarity score for this chunk
+      "score":        float — similarity score for this chunk,
+      "rank":         int  — retrieval rank (1-based index, 1 = highest score)
     },
     …
   ]
@@ -43,11 +46,13 @@ _TEXT_PREVIEW_LEN: int = 200
 
 def log_query(
     *,
+    query_id: str,
     question: str,
     answer: str,
     model: str,
     top_score: float | None,
     processing_time_ms: int,
+    config: dict[str, Any],
     retrieved_chunks: list[dict[str, Any]],
     logs_dir: Path = LOGS_DIR,
 ) -> Path:
@@ -57,6 +62,7 @@ def log_query(
     the filename to guarantee uniqueness across concurrent processes.
 
     Args:
+        query_id:           UUID for this query (stable identifier).
         question:           The original user question text.
         answer:             The answer returned to the user (or error message).
         model:              LLM model identifier used for generation.
@@ -64,9 +70,10 @@ def log_query(
                             if retrieval returned nothing.
         processing_time_ms: Wall-clock milliseconds from question receipt to
                             answer delivery.
+        config:             Snapshot of all tuning parameters for this query.
         retrieved_chunks:   List of dicts with keys ``text_preview``,
-                            ``metadata``, and ``score`` — built by the caller
-                            from raw LlamaIndex ``NodeWithScore`` objects.
+                            ``metadata``, ``score``, and ``rank`` — built by
+                            the caller from raw LlamaIndex ``NodeWithScore`` objects.
         logs_dir:           Directory to write logs into.  Defaults to the
                             project-level ``LOGS_DIR`` from config.
 
@@ -82,12 +89,14 @@ def log_query(
     log_path = logs_dir / filename
 
     payload: dict[str, Any] = {
+        "id": query_id,
         "timestamp": now.isoformat(),
         "question": question,
         "answer": answer,
         "model": model,
         "top_score": top_score,
         "processing_time_ms": processing_time_ms,
+        "config": config,
         "retrieved_chunks": retrieved_chunks,
     }
 
@@ -105,6 +114,7 @@ def _build_chunk_log_entry(
     text: str,
     metadata: dict[str, Any],
     score: float,
+    rank: int,
 ) -> dict[str, Any]:
     """Return a serialisable dict representing one retrieved chunk.
 
@@ -114,12 +124,14 @@ def _build_chunk_log_entry(
         text:     Full text of the retrieved chunk.
         metadata: Metadata dict from the LlamaIndex node (paper_name, page_number, …).
         score:    Similarity score for this chunk.
+        rank:     Retrieval rank (1-based index, 1 = highest score).
 
     Returns:
-        A dict with ``text_preview``, ``metadata``, and ``score``.
+        A dict with ``text_preview``, ``metadata``, ``score``, and ``rank``.
     """
     return {
         "text_preview": text[:_TEXT_PREVIEW_LEN],
         "metadata": metadata,
         "score": score,
+        "rank": rank,
     }

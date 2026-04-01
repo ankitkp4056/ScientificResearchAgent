@@ -34,3 +34,23 @@ LLM_MODEL: str = "gpt-4o-mini"
 SIMILARITY_TOP_K: int = 5
 # Retrieval score below this threshold triggers a low-confidence disclaimer.
 LOW_CONFIDENCE_THRESHOLD: float = 0.3
+
+
+def get_config_snapshot() -> dict:
+    """Return a snapshot of all tuning parameters as a dict.
+
+    Used for eval tracking — every query log includes the config that produced
+    it, enabling diff mode to correlate metric changes with parameter changes.
+
+    Returns:
+        Dict with keys for all tunable configuration constants.
+    """
+    return {
+        "chunk_size": CHUNK_SIZE,
+        "chunk_overlap": CHUNK_OVERLAP,
+        "embedding_model": EMBEDDING_MODEL,
+        "embedding_dimensions": EMBEDDING_DIMENSIONS,
+        "llm_model": LLM_MODEL,
+        "similarity_top_k": SIMILARITY_TOP_K,
+        "low_confidence_threshold": LOW_CONFIDENCE_THRESHOLD,
+    }
