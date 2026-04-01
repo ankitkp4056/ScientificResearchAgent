@@ -5,6 +5,16 @@ All notable changes to this project will be documented here.
 ## [Unreleased]
 
 ### Added
+- Phase 4: Web UI (`backend/app/api.py`, `frontend/index.html`)
+  - FastAPI app with lifespan-based startup — query engine loaded once at boot; startup failure logs the error and leaves server reachable (so `/reindex` still works)
+  - `GET /` — serves `frontend/index.html` via `FileResponse`; 404 if file missing
+  - `POST /query` — accepts `{"question": str}`, returns `{"answer": str, "sources": [...]}` (Pydantic-validated); 503 if engine not initialised, 500 on pipeline error
+  - `POST /reindex` — wipes index, rebuilds from scratch, refreshes in-memory engine; 500 on failure
+  - Plain `def` endpoints so FastAPI auto-threads synchronous pipeline calls, keeping the event loop unblocked
+  - CORS middleware scoped to `localhost` / `127.0.0.1` on port 8000
+  - `frontend/index.html` — single-file vanilla HTML/CSS/JS: question input + Ask button (Enter key supported), answer display with inline citations (paper, page, score, text preview), Re-index button with confirmation dialog, loading spinner, error banner; all user content rendered via `textContent` / `escapeHtml` (XSS-safe)
+  - `backend/requirements.txt` — added `fastapi>=0.111.0`, `uvicorn[standard]>=0.29.0`
+
 - Phase 3: Query pipeline (`backend/app/query.py`)
   - `initialize_query_engine(papers_dir, storage_dir)` — loads (or builds) the vector index, wires a `RetrieverQueryEngine` with GPT-4o-mini (`temperature=0.0`) and a grounding system prompt that restricts answers to provided context; fails fast with `ValueError` if `OPENAI_API_KEY` is unset
   - `query_question(question, query_engine)` — single-retrieval flow: fetches top-5 chunks, guards against empty retrieval (returns "insufficient information" without calling the LLM), prepends a low-confidence disclaimer when top score < 0.3, synthesizes a cited answer, returns `{"answer": str, "sources": [{"paper", "page", "score", "text_preview"}]}`

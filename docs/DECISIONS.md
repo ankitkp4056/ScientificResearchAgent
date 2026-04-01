@@ -51,6 +51,20 @@ Key architectural and product decisions made during development, with reasoning.
 **Reasoning:** Guarantees exactly one embedding/retrieval API call per query. Allows the empty-retrieval guard and low-confidence check to run before the LLM is invoked, avoiding wasted API spend. Keeps logging deterministic (logged nodes are the same nodes the LLM saw).
 **Alternatives considered:** Using `query_engine.query()` and inspecting `response.source_nodes` after the fact (retrieval still happens; no way to short-circuit before LLM call); subclassing `RetrieverQueryEngine` to override internal methods (more invasive, harder to maintain).
 
+## 2026-04-01 — FastAPI as the web layer with same-origin frontend serving
+
+**Context:** Phase 4 needed a minimal HTTP server to expose the query pipeline to a browser UI. Options were a bare stdlib `http.server`, Flask, or FastAPI.
+**Decision:** FastAPI, serving `frontend/index.html` from `GET /` via `FileResponse` so the frontend and API share the same origin.
+**Reasoning:** Same-origin serving eliminates CORS for the primary use case (browser loads page from the same server it queries). FastAPI's Pydantic validation catches malformed requests before they reach the pipeline. Lifespan context manager surfaces config errors at startup. Auto-threading of plain `def` handlers avoids blocking the event loop without requiring the pipeline to be rewritten as async.
+**Alternatives considered:** Flask (no native async or lifespan; would need `threading` manually for non-blocking handlers); bare `http.server` (no routing, no validation, too much boilerplate); serving frontend from a separate dev server (simpler tooling split but adds CORS complexity and an extra process).
+
+## 2026-04-01 — Single-file vanilla HTML/CSS/JS frontend (no build tooling)
+
+**Context:** The project scope is a local research tool; the UI only needs a question input, answer display with citations, and a re-index trigger.
+**Decision:** One file (`frontend/index.html`) with inline CSS and inline JS. No framework, no bundler, no npm.
+**Reasoning:** Zero build steps — the file is served directly. Browser-native `fetch`, `textContent`, and DOM APIs are sufficient for the interaction model. `escapeHtml` helper prevents XSS without a library. Keeping it in one file makes it trivially reviewable and editable.
+**Alternatives considered:** React/Vue (unnecessary overhead for this scope); separate CSS/JS files (marginal organisation gain, extra HTTP round-trips, added setup).
+
 ## 2026-04-01 — Page-sentinel chunking strategy
 
 **Context:** SentenceSplitter operates on a flat string, losing page boundary information. Each chunk needs a `page_number` metadata field for citations.
