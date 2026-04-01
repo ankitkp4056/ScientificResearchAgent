@@ -44,6 +44,13 @@ Key architectural and product decisions made during development, with reasoning.
 **Reasoning:** Fast, reliable text extraction with per-page access. Handles corrupt pages gracefully (per-page try/except). No external binaries required. Well-maintained and pip-installable.
 **Alternatives considered:** `pdfminer.six` (slower, more complex API), `pypdf` (weaker text extraction quality on multi-column layouts), `pdfplumber` (good but heavier dependency).
 
+## 2026-04-01 — Single-retrieval query architecture (retrieve once, synthesize directly)
+
+**Context:** LlamaIndex's default `RetrieverQueryEngine.query()` internally calls the retriever and then the synthesizer. This makes it hard to inspect retrieved nodes before synthesis (needed for confidence scoring and logging) without triggering a second retrieval.
+**Decision:** Call `retriever.retrieve()` once, inspect the nodes directly (confidence check, logging), then call `response_synthesizer.synthesize()` with the pre-fetched nodes — bypassing the engine's internal retrieve-then-synthesize path.
+**Reasoning:** Guarantees exactly one embedding/retrieval API call per query. Allows the empty-retrieval guard and low-confidence check to run before the LLM is invoked, avoiding wasted API spend. Keeps logging deterministic (logged nodes are the same nodes the LLM saw).
+**Alternatives considered:** Using `query_engine.query()` and inspecting `response.source_nodes` after the fact (retrieval still happens; no way to short-circuit before LLM call); subclassing `RetrieverQueryEngine` to override internal methods (more invasive, harder to maintain).
+
 ## 2026-04-01 — Page-sentinel chunking strategy
 
 **Context:** SentenceSplitter operates on a flat string, losing page boundary information. Each chunk needs a `page_number` metadata field for citations.
